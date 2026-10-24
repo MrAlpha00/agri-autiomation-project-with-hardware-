@@ -2,18 +2,7 @@
 
 import React from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { 
-  Activity, 
-  Droplets, 
-  Waves, 
-  Thermometer, 
-  Sun, 
-  Radio, 
-  AlertTriangle,
-  Info,
-  CheckCircle,
-  HelpCircle
-} from 'lucide-react';
+import { Activity, Info } from 'lucide-react';
 import { HARDWARE_PINS } from '@/types/iot';
 
 export default function SensorsPage() {

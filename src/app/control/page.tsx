@@ -3,17 +3,8 @@
 import React, { useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { 
-  Power, 
   Sliders, 
   ShieldAlert, 
-  Cpu, 
-  AlertTriangle, 
-  CheckCircle2, 
-  Clock, 
-  RefreshCw,
-  Droplets,
-  Lightbulb,
-  Volume2,
   Lock
 } from 'lucide-react';
 import { HARDWARE_PINS, SystemMode, CommandStatus } from '@/types/iot';
@@ -32,7 +23,6 @@ interface RelayControlItem {
 
 export default function ControlPage() {
   const [mode, setMode] = useState<SystemMode>('MANUAL');
-  const [isDemo] = useState(true);
 
   // Actuator channels
   const [relays, setRelays] = useState<RelayControlItem[]>([

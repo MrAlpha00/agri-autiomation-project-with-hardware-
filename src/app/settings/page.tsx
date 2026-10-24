@@ -6,13 +6,10 @@ import {
   Settings, 
   Sliders, 
   ShieldAlert, 
-  Database, 
   Bell, 
   Key, 
   Save, 
-  Info,
-  CheckCircle2,
-  RefreshCw
+  Info
 } from 'lucide-react';
 import { CalibrationThresholds } from '@/types/iot';
 

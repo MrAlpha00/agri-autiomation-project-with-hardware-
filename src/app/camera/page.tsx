@@ -7,20 +7,14 @@ import {
   Video, 
   WifiOff, 
   RefreshCw, 
-  ShieldAlert, 
   Image as ImageIcon, 
-  ExternalLink,
-  Settings,
-  AlertTriangle,
   Info
 } from 'lucide-react';
 
 export default function CameraPage() {
   const [streamUrl, setStreamUrl] = useState('http://192.168.1.150:81/stream');
   const [captureUrl, setCaptureUrl] = useState('http://192.168.1.150/capture');
-  const [isCommissioned, setIsCommissioned] = useState(false);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
-  const [lastSnapshot, setLastSnapshot] = useState<string | null>(null);
 
   const handleCaptureSnapshot = () => {
     setSnapshotLoading(true);

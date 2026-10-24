@@ -7,13 +7,7 @@ import {
   ShieldAlert, 
   CheckCircle2, 
   AlertTriangle, 
-  Info, 
-  Filter, 
-  Radio, 
-  Clock,
-  Eye,
-  Droplets,
-  Terminal
+  Info
 } from 'lucide-react';
 import { AlertEvent, AlertSeverity } from '@/types/iot';
 

@@ -3,20 +3,12 @@
 import React from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { 
-  Droplets, 
-  Thermometer, 
-  Sun, 
-  Waves, 
-  ShieldAlert, 
   Power, 
   Cpu, 
   Activity, 
-  Clock, 
-  Radio, 
   ArrowUpRight,
   Eye,
-  CheckCircle2,
-  AlertCircle
+  CheckCircle2
 } from 'lucide-react';
 import Link from 'next/link';
 import { HARDWARE_PINS } from '@/types/iot';
