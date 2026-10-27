@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { 
   Power, 
@@ -14,26 +14,78 @@ import Link from 'next/link';
 import { HARDWARE_PINS } from '@/types/iot';
 
 export default function DashboardPage() {
-  // Phase 1 Initial Shell Data (Marked explicitly as Demo Telemetry)
-  const isDemo = true;
-  const mockTelemetry = {
+  const [isLive, setIsLive] = useState(false);
+  const [telemetry, setTelemetry] = useState({
     temperature: 24.8,
     humidity: 62.0,
     soilRaw: 2840, // Raw ADC 0-4095
     waterRaw: 1950, // Raw ADC 0-4095
     lightRaw: 1420, // Raw ADC 0-4095
     pirState: false, // GPIO26
-    timestamp: '2026-10-24 10:55:00 UTC (Demo)',
+    timestamp: 'Awaiting Hardware Feed (Demo Data)',
     isStale: false,
-    rssi: -67
-  };
+    rssi: -67,
+    uptimeSeconds: 0,
+    firmwareVersion: 'v1.0.0',
+  });
 
-  const mockRelays = {
+  const [relays, setRelays] = useState({
     pump: false,    // IN1 / GPIO18
     led: false,     // IN2 / GPIO19
     buzzer: false,  // IN3 / GPIO21
     spare: false    // IN4 / GPIO22
-  };
+  });
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadData() {
+      try {
+        const res = await fetch('/api/device/state');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (mounted && data.isLive && data.latestTelemetry) {
+          setIsLive(true);
+          const t = data.latestTelemetry;
+          const s = data.deviceState;
+          setTelemetry({
+            temperature: t.temperatureC ?? 24.8,
+            humidity: t.humidityPct ?? 62.0,
+            soilRaw: t.soilRaw,
+            waterRaw: t.waterRaw,
+            lightRaw: t.lightRaw,
+            pirState: Boolean(t.pirMotion),
+            timestamp: new Date(t.timestamp).toLocaleTimeString(),
+            isStale: !s?.isOnline,
+            rssi: t.wifiRssi ?? s?.wifiRssi ?? -67,
+            uptimeSeconds: s?.uptimeSeconds || 0,
+            firmwareVersion: s?.firmwareVersion || 'v1.0.0',
+          });
+
+          if (s?.relays) {
+            setRelays({
+              pump: Boolean(s.relays.pump),
+              led: Boolean(s.relays.light ?? s.relays.led),
+              buzzer: Boolean(s.relays.buzzer),
+              spare: Boolean(s.relays.spare),
+            });
+          }
+        }
+      } catch {
+        // Fallback demo data
+      }
+    }
+
+    loadData();
+    const interval = setInterval(loadData, 10000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const isDemo = !isLive;
+  const mockTelemetry = telemetry;
+  const mockRelays = relays;
 
   return (
     <AppLayout>
@@ -331,12 +383,12 @@ export default function DashboardPage() {
             <Cpu className="h-4 w-4 text-slate-500" />
             <span>Target Device: <strong className="text-slate-200">ESP32 DevKit V1 (ESP32-AGRI-01)</strong></span>
             <span className="text-slate-600">•</span>
-            <span>Firmware: <strong className="text-slate-200">v1.0.0-rc1</strong></span>
+            <span>Firmware: <strong className="text-slate-200">{mockTelemetry.firmwareVersion}</strong></span>
           </div>
           <div className="flex items-center gap-3 font-mono text-[11px]">
-            <span>Wi-Fi RSSI: <strong className="text-emerald-400">-67 dBm</strong></span>
-            <span>Uptime: <strong className="text-slate-300">0d 0h 0m</strong></span>
-            <span>Telemetry: <strong className="text-amber-400">Simulated</strong></span>
+            <span>Wi-Fi RSSI: <strong className="text-emerald-400">{mockTelemetry.rssi} dBm</strong></span>
+            <span>Uptime: <strong className="text-slate-300">{Math.floor(mockTelemetry.uptimeSeconds / 3600)}h {Math.floor((mockTelemetry.uptimeSeconds % 3600) / 60)}m {mockTelemetry.uptimeSeconds % 60}s</strong></span>
+            <span>Telemetry: <strong className={isLive ? 'text-emerald-400' : 'text-amber-400'}>{isLive ? 'Live Hardware' : 'Simulated (Demo)'}</strong></span>
           </div>
         </div>
       </div>
