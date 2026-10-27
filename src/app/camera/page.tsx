@@ -1,6 +1,6 @@
+/* eslint-disable @next/next/no-img-element */
 'use client';
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useSyncExternalStore } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { 
   Camera, 
@@ -8,10 +8,8 @@ import {
   WifiOff, 
   RefreshCw, 
   Image as ImageIcon, 
-  Info,
   ExternalLink,
-  AlertTriangle,
-  ShieldAlert
+  AlertTriangle
 } from 'lucide-react';
 
 export default function CameraPage() {
@@ -25,13 +23,13 @@ export default function CameraPage() {
   const [latestSnapshot, setLatestSnapshot] = useState<string | null>(null);
   const [snapshotTimestamp, setSnapshotTimestamp] = useState<string | null>(null);
   const [streamError, setStreamError] = useState(false);
-  const [isHttpsPage, setIsHttpsPage] = useState(false);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setIsHttpsPage(window.location.protocol === 'https:');
-    }
-  }, []);
+  // Official React 19 pattern to read browser window properties without cascading renders or hydration mismatch
+  const isHttpsPage = useSyncExternalStore(
+    () => () => {},
+    () => typeof window !== 'undefined' && window.location.protocol === 'https:',
+    () => false
+  );
 
   const isLocalHttpStream = isHttpsPage && streamUrl.startsWith('http://');
 

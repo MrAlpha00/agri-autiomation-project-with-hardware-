@@ -110,12 +110,13 @@ export default function ControlPage() {
 
     fetchState();
     const interval = setInterval(fetchState, 10000);
+    const pollers = activePollers.current;
     return () => {
       mounted = false;
       clearInterval(interval);
       // Clean up pollers
-      activePollers.current.forEach((t) => clearInterval(t));
-      activePollers.current.clear();
+      pollers.forEach((t) => clearInterval(t));
+      pollers.clear();
     };
   }, []);
 

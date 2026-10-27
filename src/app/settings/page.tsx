@@ -410,6 +410,12 @@ export default function SettingsPage() {
                   {backendStatus?.supabaseHealth.message || 'Checking backend status...'}
                 </p>
 
+                {backendStatus?.supabaseHealth.message?.includes('PGRST205') && (
+                  <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-2.5 text-[11px] text-amber-300">
+                    <strong>Schema Action Required:</strong> Open your Supabase Dashboard → SQL Editor and execute <code className="bg-amber-950/60 px-1 py-0.5 rounded text-amber-200">supabase/schema.sql</code> to create <code className="text-amber-200">public.device_state</code> and related tables.
+                  </div>
+                )}
+
                 {backendStatus?.supabaseHealth.latencyMs !== undefined && (
                   <p className="text-[11px] font-mono text-slate-500">
                     Round-trip latency: <strong className="text-slate-300">{backendStatus.supabaseHealth.latencyMs} ms</strong>
