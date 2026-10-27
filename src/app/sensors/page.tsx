@@ -1,12 +1,53 @@
 'use client';
-
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Activity, Info } from 'lucide-react';
 import { HARDWARE_PINS } from '@/types/iot';
 
 export default function SensorsPage() {
-  const isDemo = true;
+  const [isLive, setIsLive] = useState(false);
+  const [liveData, setLiveData] = useState({
+    soilRaw: 2840,
+    waterRaw: 1950,
+    lightRaw: 1420,
+    temp: '24.8 °C',
+    humidity: '62 %',
+    pirMotion: false,
+  });
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadSensors() {
+      try {
+        const res = await fetch('/api/device/state');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (mounted && data.isLive && data.latestTelemetry) {
+          setIsLive(true);
+          const t = data.latestTelemetry;
+          setLiveData({
+            soilRaw: t.soilRaw,
+            waterRaw: t.waterRaw,
+            lightRaw: t.lightRaw,
+            temp: t.temperatureC !== null && t.temperatureC !== undefined ? `${t.temperatureC} °C` : 'N/A',
+            humidity: t.humidityPct !== null && t.humidityPct !== undefined ? `${t.humidityPct} %` : 'N/A',
+            pirMotion: Boolean(t.pirMotion),
+          });
+        }
+      } catch {
+        // Fallback default
+      }
+    }
+
+    loadSensors();
+    const interval = setInterval(loadSensors, 10000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const isDemo = !isLive;
 
   const sensors = [
     {
