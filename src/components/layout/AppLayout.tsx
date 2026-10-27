@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { AlertTriangle } from 'lucide-react';
@@ -12,10 +12,46 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isDemoMode, setIsDemoMode] = useState(true);
+  const [isHardwareOnline, setIsHardwareOnline] = useState(false);
+  const [lastTelemetryTime, setLastTelemetryTime] = useState<string | null>(null);
 
-  // In Phase 1 shell, default to demo mode until Supabase credentials & ESP32 ingestion are configured
-  const isDemoMode = true;
-  const isHardwareOnline = false;
+  useEffect(() => {
+    let mounted = true;
+    async function checkStatus() {
+      try {
+        const res = await fetch('/api/config/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (mounted) {
+          const hw = data.hardwareStatus;
+          if (hw && hw.isOnline) {
+            setIsHardwareOnline(true);
+            setIsDemoMode(false);
+            setLastTelemetryTime(hw.lastSeen ? new Date(hw.lastSeen).toLocaleTimeString() : 'Active');
+          } else {
+            setIsHardwareOnline(false);
+            // Keep demo mode clearly labeled until actual hardware data is received
+            setIsDemoMode(true);
+            if (hw?.lastSeen) {
+              setLastTelemetryTime(`Offline (Last seen ${new Date(hw.lastSeen).toLocaleTimeString()})`);
+            } else {
+              setLastTelemetryTime('Offline (Awaiting Hardware Feed)');
+            }
+          }
+        }
+      } catch {
+        // Fallback default
+      }
+    }
+
+    checkStatus();
+    const interval = setInterval(checkStatus, 15000); // Check every 15s
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   const handleEmergencyStop = () => {
     alert('Emergency Stop triggered: Commanded immediate de-energize of Water Pump (GPIO18 -> HIGH / Active-Low OFF).');
@@ -33,7 +69,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           isDemoMode={isDemoMode}
           isHardwareOnline={isHardwareOnline}
           systemMode="MANUAL"
-          lastTelemetryTime="Offline (Phase 1 Shell)"
+          lastTelemetryTime={lastTelemetryTime || 'Offline (Awaiting Hardware Feed)'}
           onEmergencyStop={handleEmergencyStop}
         />
 
@@ -44,14 +80,14 @@ export function AppLayout({ children }: AppLayoutProps) {
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
                 <span>
-                  <strong>Hardware Advisory:</strong> Running in <strong>Demo Shell Mode</strong>. Live ESP32 DevKit V1 and Supabase backend credentials are not yet linked. Telemetry shown is simulated for interface verification.
+                  <strong>Hardware Advisory:</strong> Running in <strong>Demo Shell Mode</strong>. Telemetry shown is simulated for interface verification until live ESP32 DevKit V1 telemetry is received by the backend.
                 </span>
               </div>
               <Link
                 href="/settings"
                 className="shrink-0 underline hover:text-amber-100 font-medium ml-2"
               >
-                Configure Credentials →
+                Backend Configuration Status →
               </Link>
             </div>
           </div>

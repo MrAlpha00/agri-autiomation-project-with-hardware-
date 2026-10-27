@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { 
   Settings, 
@@ -9,9 +9,48 @@ import {
   Bell, 
   Key, 
   Save, 
-  Info
+  Info,
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle,
+  Database,
+  Send,
+  Radio
 } from 'lucide-react';
 import { CalibrationThresholds } from '@/types/iot';
+
+interface VariableStatus {
+  key: string;
+  description: string;
+  isConfigured: boolean;
+  isPublic: boolean;
+  isSecret: boolean;
+  requiredFor: string;
+  source: string;
+  vercelScope: string;
+}
+
+interface BackendStatusResponse {
+  timestamp: string;
+  isFullyConfigured: boolean;
+  stats: {
+    total: number;
+    configured: number;
+    pending: number;
+  };
+  supabaseHealth: {
+    status: 'CONNECTED' | 'UNCONFIGURED' | 'ERROR';
+    message: string;
+    latencyMs?: number;
+  };
+  hardwareStatus: {
+    isOnline: boolean;
+    lastSeen: string | null;
+    deviceId: string;
+    note: string;
+  };
+  variables: VariableStatus[];
+}
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<'calibration' | 'credentials' | 'alerts'>('calibration');
@@ -32,6 +71,63 @@ export default function SettingsPage() {
 
   const [saving, setSaving] = useState(false);
 
+  // Dynamic backend configuration status
+  const [backendStatus, setBackendStatus] = useState<BackendStatusResponse | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(true);
+  const [statusError, setStatusError] = useState<string | null>(null);
+
+  // Telegram test status
+  const [telegramSending, setTelegramSending] = useState(false);
+  const [telegramFeedback, setTelegramFeedback] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+  const [testCustomMessage, setTestCustomMessage] = useState('');
+
+  const loadStatus = async () => {
+    setLoadingStatus(true);
+    setStatusError(null);
+    try {
+      const res = await fetch('/api/config/status');
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: Failed to fetch configuration status`);
+      }
+      const data: BackendStatusResponse = await res.json();
+      setBackendStatus(data);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown status check failure';
+      setStatusError(msg);
+    } finally {
+      setLoadingStatus(false);
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/config/status')
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch configuration status`);
+        return res.json();
+      })
+      .then((data: BackendStatusResponse) => {
+        if (active) {
+          setBackendStatus(data);
+          setLoadingStatus(false);
+        }
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          const msg = err instanceof Error ? err.message : 'Unknown status check failure';
+          setStatusError(msg);
+          setLoadingStatus(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleSaveThresholds = (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -39,6 +135,39 @@ export default function SettingsPage() {
       setSaving(false);
       alert('Threshold calibration settings saved locally. In Phase 2, this commits to device_settings table in Supabase.');
     }, 700);
+  };
+
+  const handleSendTelegramTest = async () => {
+    setTelegramSending(true);
+    setTelegramFeedback(null);
+    try {
+      const res = await fetch('/api/telegram/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: testCustomMessage.trim() || undefined }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setTelegramFeedback({
+          success: false,
+          message: data.error || data.hint || `Test notification failed (HTTP ${res.status})`,
+        });
+      } else {
+        setTelegramFeedback({
+          success: true,
+          message: `${data.message} (Message ID: ${data.messageId || 'ok'})`,
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to communicate with test endpoint';
+      setTelegramFeedback({
+        success: false,
+        message: msg,
+      });
+    } finally {
+      setTelegramSending(false);
+    }
   };
 
   return (
@@ -55,6 +184,15 @@ export default function SettingsPage() {
               Set hysteresis thresholds, safety watchdogs, API credentials, and Telegram notification preferences.
             </p>
           </div>
+
+          <button
+            onClick={loadStatus}
+            disabled={loadingStatus}
+            className="self-start md:self-auto flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3.5 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-all disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 text-emerald-400 ${loadingStatus ? 'animate-spin' : ''}`} />
+            <span>{loadingStatus ? 'Checking Backend...' : 'Recheck Backend Health'}</span>
+          </button>
         </div>
 
         {/* Tab Navigation */}
@@ -80,6 +218,11 @@ export default function SettingsPage() {
           >
             <Key className="h-4 w-4" />
             Backend & Device Credentials
+            {backendStatus && backendStatus.stats.pending > 0 && (
+              <span className="rounded-full bg-amber-500/20 text-amber-400 px-1.5 py-0.2 text-[10px] font-mono">
+                {backendStatus.stats.pending} pending
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveTab('alerts')}
@@ -238,38 +381,151 @@ export default function SettingsPage() {
 
         {/* Tab 2: Backend Credentials Overview */}
         {activeTab === 'credentials' && (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
-            <h3 className="text-base font-semibold text-white flex items-center gap-2">
-              <Key className="h-4 w-4 text-emerald-400" />
-              Backend Configuration Status (.env.local)
-            </h3>
-            <p className="text-xs text-slate-400">
-              The dashboard reads environment variables securely from server runtime. Check the checklist below:
-            </p>
-
-            <div className="space-y-3 font-mono text-xs">
-              <div className="flex items-center justify-between p-3 rounded bg-slate-950 border border-slate-800">
-                <div>
-                  <span className="text-slate-300 block font-semibold">NEXT_PUBLIC_SUPABASE_URL</span>
-                  <span className="text-[11px] text-slate-500">Database & Storage endpoint</span>
+          <div className="space-y-6">
+            {/* Status Summary & Health Card */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Supabase Health Check */}
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Database className="h-4 w-4 text-emerald-400" />
+                    <h3 className="text-sm font-semibold text-white">Database & Backend Health</h3>
+                  </div>
+                  {backendStatus?.supabaseHealth.status === 'CONNECTED' ? (
+                    <span className="rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-mono font-semibold text-emerald-400 flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3" /> CONNECTED
+                    </span>
+                  ) : backendStatus?.supabaseHealth.status === 'ERROR' ? (
+                    <span className="rounded-full bg-rose-500/10 border border-rose-500/30 px-2.5 py-0.5 text-[10px] font-mono font-semibold text-rose-400 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> ERROR
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 text-[10px] font-mono font-semibold text-amber-400 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> UNCONFIGURED
+                    </span>
+                  )}
                 </div>
-                <span className="text-amber-400 font-medium">PENDING CONFIGURATION</span>
+
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {backendStatus?.supabaseHealth.message || 'Checking backend status...'}
+                </p>
+
+                {backendStatus?.supabaseHealth.latencyMs !== undefined && (
+                  <p className="text-[11px] font-mono text-slate-500">
+                    Round-trip latency: <strong className="text-slate-300">{backendStatus.supabaseHealth.latencyMs} ms</strong>
+                  </p>
+                )}
               </div>
 
-              <div className="flex items-center justify-between p-3 rounded bg-slate-950 border border-slate-800">
-                <div>
-                  <span className="text-slate-300 block font-semibold">SUPABASE_SERVICE_ROLE_KEY</span>
-                  <span className="text-[11px] text-slate-500">Server-only device ingestion secret</span>
+              {/* Hardware Heartbeat Status */}
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Radio className="h-4 w-4 text-cyan-400" />
+                    <h3 className="text-sm font-semibold text-white">Target ESP32 Status</h3>
+                  </div>
+                  {backendStatus?.hardwareStatus.isOnline ? (
+                    <span className="rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-mono font-semibold text-emerald-400">
+                      ONLINE
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-slate-800 border border-slate-700 px-2.5 py-0.5 text-[10px] font-mono font-semibold text-slate-400">
+                      OFFLINE
+                    </span>
+                  )}
                 </div>
-                <span className="text-amber-400 font-medium">PENDING CONFIGURATION</span>
+
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {backendStatus?.hardwareStatus.note || 'Hardware status pending verification.'}
+                </p>
+
+                <p className="text-[11px] font-mono text-slate-500">
+                  Target device ID: <strong className="text-slate-300">{backendStatus?.hardwareStatus.deviceId || 'ESP32-AGRI-01'}</strong>
+                  {backendStatus?.hardwareStatus.lastSeen && (
+                    <> • Last heartbeat: <strong className="text-slate-300">{backendStatus.hardwareStatus.lastSeen}</strong></>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {/* Vercel Redeployment Notice */}
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-xs text-amber-200">
+              <div className="flex items-start gap-3">
+                <Info className="h-5 w-5 shrink-0 text-amber-400 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-semibold text-amber-300 text-sm">Vercel Environment Variable Deployment Rule</p>
+                  <p className="text-slate-300 leading-relaxed">
+                    When you add or update environment variables in <strong>Vercel Project Settings → Environment Variables</strong>, they do not automatically apply to existing running serverless functions. <strong>You must trigger a new deployment (Redeploy in Vercel or git push)</strong> for the changes to take effect in the production runtime.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Environment Variables Table */}
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-3 border-b border-slate-800">
+                <div>
+                  <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                    <Key className="h-4 w-4 text-emerald-400" />
+                    Environment Variables Runtime Checklist
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Evaluated securely by server runtime without leaking secret tokens to browser.
+                  </p>
+                </div>
+
+                {backendStatus && (
+                  <span className="text-xs font-mono font-medium text-slate-400">
+                    {backendStatus.stats.configured} of {backendStatus.stats.total} configured
+                  </span>
+                )}
               </div>
 
-              <div className="flex items-center justify-between p-3 rounded bg-slate-950 border border-slate-800">
-                <div>
-                  <span className="text-slate-300 block font-semibold">DEVICE_SHARED_SECRET</span>
-                  <span className="text-[11px] text-slate-500">ESP32 header authentication secret (x-device-secret)</span>
+              {statusError && (
+                <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-300">
+                  {statusError}
                 </div>
-                <span className="text-amber-400 font-medium">PENDING CONFIGURATION</span>
+              )}
+
+              <div className="space-y-3 font-mono text-xs">
+                {backendStatus?.variables.map((item) => (
+                  <div
+                    key={item.key}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-lg bg-slate-950 border border-slate-800/80 gap-3"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-slate-200 font-bold">{item.key}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                          item.isSecret
+                            ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                            : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                        }`}>
+                          {item.isSecret ? 'Server Secret' : 'Public'}
+                        </span>
+                        <span className="text-[10px] text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded">
+                          {item.vercelScope}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-sans">{item.description}</p>
+                      <p className="text-[10px] text-slate-500 font-sans">
+                        <strong>Source:</strong> {item.source}
+                      </p>
+                    </div>
+
+                    <div className="shrink-0 self-start sm:self-center">
+                      {item.isConfigured ? (
+                        <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 text-[11px] font-bold text-emerald-400">
+                          <CheckCircle2 className="h-3 w-3" /> CONFIGURED
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 text-[11px] font-bold text-amber-400">
+                          <AlertCircle className="h-3 w-3" /> PENDING CONFIGURATION
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -277,41 +533,97 @@ export default function SettingsPage() {
 
         {/* Tab 3: Alerts & Telegram */}
         {activeTab === 'alerts' && (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
-            <h3 className="text-base font-semibold text-white flex items-center gap-2">
-              <Bell className="h-4 w-4 text-emerald-400" />
-              Telegram Notification Settings
-            </h3>
-            <p className="text-xs text-slate-400">
-              Integrate with your Telegram bot (@BotFather) to broadcast critical alerts and control relays remotely.
-            </p>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-5">
+            <div>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Bell className="h-4 w-4 text-emerald-400" />
+                Telegram Notification & Alert Integration
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Broadcast critical farm alerts (low water safety interlock, pump timeouts, unauthorized motion) to your Telegram chat.
+              </p>
+            </div>
 
-            <div className="space-y-3 text-xs max-w-xl">
-              <div>
-                <label className="text-slate-300 font-medium block">Telegram Bot Token</label>
-                <input
-                  type="password"
-                  placeholder="123456789:ABCdefGHIjklMNOpqrSTUvwxyz"
-                  className="mt-1 w-full rounded bg-slate-950 border border-slate-800 px-3 py-2 text-slate-200 font-mono"
-                />
+            {/* Telegram Configuration Status Check */}
+            <div className="rounded-lg border border-slate-800 bg-slate-950 p-4 space-y-2 text-xs">
+              <span className="font-semibold text-slate-200 block">Server Runtime Configuration Status:</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono">
+                <div className="flex items-center justify-between p-2 rounded bg-slate-900/80 border border-slate-800">
+                  <span className="text-slate-400">TELEGRAM_BOT_TOKEN</span>
+                  {backendStatus?.variables.find(v => v.key === 'TELEGRAM_BOT_TOKEN')?.isConfigured ? (
+                    <span className="text-emerald-400 font-semibold">CONFIGURED</span>
+                  ) : (
+                    <span className="text-amber-400 font-semibold">NOT CONFIGURED</span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between p-2 rounded bg-slate-900/80 border border-slate-800">
+                  <span className="text-slate-400">TELEGRAM_CHAT_ID</span>
+                  {backendStatus?.variables.find(v => v.key === 'TELEGRAM_CHAT_ID')?.isConfigured ? (
+                    <span className="text-emerald-400 font-semibold">CONFIGURED</span>
+                  ) : (
+                    <span className="text-amber-400 font-semibold">NOT CONFIGURED</span>
+                  )}
+                </div>
               </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Configure both variables in Vercel or local <code>.env.local</code>. Secrets are read exclusively by server route handlers and never exposed in the browser.
+              </p>
+            </div>
 
+            {/* Telegram Test Trigger Form */}
+            <div className="space-y-4 max-w-xl">
               <div>
-                <label className="text-slate-300 font-medium block">Telegram Target Chat ID</label>
+                <label className="text-slate-300 font-medium text-xs block">
+                  Optional Custom Test Message
+                </label>
                 <input
                   type="text"
-                  placeholder="e.g. 123456789"
-                  className="mt-1 w-full rounded bg-slate-950 border border-slate-800 px-3 py-2 text-slate-200 font-mono"
+                  value={testCustomMessage}
+                  onChange={(e) => setTestCustomMessage(e.target.value)}
+                  placeholder="e.g. Field Unit 1 bench test notification"
+                  className="mt-1 w-full rounded bg-slate-950 border border-slate-800 px-3 py-2 text-slate-200 text-xs font-mono"
                 />
+                <span className="text-[11px] text-slate-500">Leave blank to dispatch standard system diagnostic alert.</span>
               </div>
 
               <button
                 type="button"
-                onClick={() => alert('Telegram integration test requires valid token in .env.local (Phase 6).')}
-                className="mt-2 rounded bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-colors"
+                onClick={handleSendTelegramTest}
+                disabled={telegramSending}
+                className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-emerald-500 active:scale-95 transition-all disabled:opacity-50"
               >
-                Send Test Notification
+                {telegramSending ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                <span>{telegramSending ? 'Dispatching to Telegram...' : 'Send Live Test Notification'}</span>
               </button>
+
+              {/* Real Server Feedback */}
+              {telegramFeedback && (
+                <div className={`rounded-xl border p-4 text-xs transition-all ${
+                  telegramFeedback.success
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                    : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                }`}>
+                  <div className="flex items-start gap-2.5">
+                    {telegramFeedback.success ? (
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 shrink-0 text-rose-400 mt-0.5" />
+                    )}
+                    <div>
+                      <p className="font-semibold">
+                        {telegramFeedback.success ? 'Notification Sent Successfully' : 'Notification Failed'}
+                      </p>
+                      <p className="mt-1 text-slate-300 leading-relaxed font-mono text-[11px]">
+                        {telegramFeedback.message}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
