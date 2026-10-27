@@ -12,8 +12,6 @@ const PLACEHOLDER_VALUES = new Set([
   'generate_a_secure_random_hex_key_here_for_esp32_auth',
   '123456789:ABCdefGHIjklMNOpqrSTUvwxyz',
   '123456789',
-  'http://192.168.1.150:81/stream',
-  'http://192.168.1.150/capture',
 ]);
 
 /**
