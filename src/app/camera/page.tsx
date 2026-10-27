@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { 
   Camera, 
@@ -8,21 +8,56 @@ import {
   WifiOff, 
   RefreshCw, 
   Image as ImageIcon, 
-  Info
+  Info,
+  ExternalLink,
+  AlertTriangle,
+  ShieldAlert
 } from 'lucide-react';
 
 export default function CameraPage() {
-  const [streamUrl, setStreamUrl] = useState('http://192.168.1.150:81/stream');
-  const [captureUrl, setCaptureUrl] = useState('http://192.168.1.150/capture');
+  const [streamUrl, setStreamUrl] = useState(
+    process.env.NEXT_PUBLIC_CAMERA_STREAM_URL || 'http://192.168.1.150:81/stream'
+  );
+  const [captureUrl, setCaptureUrl] = useState(
+    process.env.NEXT_PUBLIC_CAMERA_CAPTURE_URL || 'http://192.168.1.150/capture'
+  );
   const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [latestSnapshot, setLatestSnapshot] = useState<string | null>(null);
+  const [snapshotTimestamp, setSnapshotTimestamp] = useState<string | null>(null);
+  const [streamError, setStreamError] = useState(false);
+  const [isHttpsPage, setIsHttpsPage] = useState(false);
 
-  const handleCaptureSnapshot = () => {
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsHttpsPage(window.location.protocol === 'https:');
+    }
+  }, []);
+
+  const isLocalHttpStream = isHttpsPage && streamUrl.startsWith('http://');
+
+  const handleCaptureSnapshot = async () => {
     setSnapshotLoading(true);
-    // Simulate capture request for phase 1 shell
-    setTimeout(() => {
+    setStreamError(false);
+
+    try {
+      // Append cache buster timestamp
+      const targetUrl = `${captureUrl}${captureUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+      
+      const img = new Image();
+      img.onload = () => {
+        setLatestSnapshot(targetUrl);
+        setSnapshotTimestamp(new Date().toLocaleTimeString());
+        setSnapshotLoading(false);
+      };
+      img.onerror = () => {
+        setSnapshotLoading(false);
+        setStreamError(true);
+      };
+      img.src = targetUrl;
+    } catch {
       setSnapshotLoading(false);
-      alert('Snapshot trigger sent. Note: ESP32-CAM is not yet connected to the local network or private subnet.');
-    }, 1000);
+      setStreamError(true);
+    }
   };
 
   return (
@@ -41,29 +76,45 @@ export default function CameraPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-3 py-1 text-xs font-mono text-amber-300">
-              STATUS: AWAITING COMMISSIONING
+            <span className="rounded-full bg-slate-800 border border-slate-700 px-3 py-1 text-xs font-mono text-slate-300">
+              RHYX M21-45 (GC2145) • RGB565 / JPEG
             </span>
           </div>
         </div>
 
-        {/* Remote vs Local Networking Architecture Notice */}
-        <div className="rounded-xl border border-blue-500/20 bg-blue-500/10 p-4 text-xs text-blue-200">
-          <div className="flex items-start gap-3">
-            <Info className="h-5 w-5 shrink-0 text-blue-400 mt-0.5" />
-            <div className="space-y-1.5">
-              <p className="font-semibold text-blue-300 text-sm">
-                Engineering Network Architecture: Local LAN vs Cloud HTTPS
-              </p>
-              <p className="text-slate-300 leading-relaxed">
-                As per system design specifications, an ESP32-CAM webserver running on a private IP (e.g. <code>192.168.x.x</code>) cannot be accessed directly by a hosted public HTTPS dashboard due to browser Mixed-Content security restrictions and NAT routing.
-              </p>
-              <p className="text-slate-300 leading-relaxed">
-                <strong>Recommended remote viewing path:</strong> Use an authenticated snapshot upload workflow where the ESP32-CAM captures a JPEG frame and posts it via HTTPS to Supabase Storage, or stream via a secure Tailscale / WireGuard private tunnel.
-              </p>
+        {/* Mixed Content & Subnet Architecture Advisory */}
+        {isLocalHttpStream && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-200">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-400 mt-0.5" />
+              <div className="space-y-1.5">
+                <p className="font-semibold text-amber-300 text-sm">
+                  Browser Security Notice: Mixed-Content (HTTPS vs Local HTTP)
+                </p>
+                <p className="text-slate-300 leading-relaxed">
+                  You are viewing this dashboard over a secure <strong>HTTPS</strong> connection, while the camera stream is configured to a plain local network <strong>HTTP</strong> address (<code>{streamUrl}</code>).
+                </p>
+                <p className="text-slate-300 leading-relaxed">
+                  Modern browsers block direct unencrypted HTTP sub-resources inside HTTPS web pages. To view the live feed:
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-slate-300">
+                  <li><strong>Local Testing:</strong> Open the stream directly in a new browser tab on your local Wi-Fi.</li>
+                  <li><strong>Cloud Deployment:</strong> Expose the ESP32-CAM via a secure HTTPS tunnel (e.g. Cloudflare Tunnel, ngrok, or Tailscale) and update <code>NEXT_PUBLIC_CAMERA_STREAM_URL</code>.</li>
+                </ul>
+                <div className="pt-2">
+                  <a
+                    href={streamUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded bg-amber-500/20 px-3 py-1 text-xs font-semibold text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition-colors"
+                  >
+                    Open Camera Stream Directly In New Tab <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Live Stream & Snapshot Grid */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -74,27 +125,56 @@ export default function CameraPage() {
                 <Video className="h-4 w-4 text-emerald-400" />
                 <h2 className="text-base font-semibold text-white">Live MJPEG Stream</h2>
               </div>
-              <span className="text-xs font-mono text-slate-400">Target: {streamUrl}</span>
+              <span className="text-xs font-mono text-slate-400">Endpoint: {streamUrl}</span>
             </div>
 
             {/* Video Viewport */}
             <div className="relative aspect-video w-full rounded-lg bg-slate-950 border border-slate-800 flex flex-col items-center justify-center p-6 text-center overflow-hidden">
-              <WifiOff className="h-12 w-12 text-slate-600 mb-3" />
-              <p className="text-sm font-semibold text-slate-300">Camera Feed Offline</p>
-              <p className="text-xs text-slate-500 max-w-md mt-1">
-                Unable to establish MJPEG stream with ESP32-CAM at <code>{streamUrl}</code>. Ensure the camera module is powered, connected to the same local Wi-Fi, and firmware is running.
-              </p>
-              <button
-                onClick={() => alert('Checking connection to camera IP...')}
-                className="mt-4 rounded-lg bg-slate-800 px-3.5 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700 transition-colors"
-              >
-                Retry Stream Connection
-              </button>
+              {!isLocalHttpStream ? (
+                <img
+                  src={streamUrl}
+                  alt="ESP32-CAM live stream"
+                  onError={() => setStreamError(true)}
+                  className="w-full h-full object-contain"
+                />
+              ) : null}
+
+              {(streamError || isLocalHttpStream) && (
+                <div className="flex flex-col items-center justify-center p-4">
+                  <WifiOff className="h-12 w-12 text-slate-600 mb-3" />
+                  <p className="text-sm font-semibold text-slate-300">
+                    {isLocalHttpStream ? 'Local Stream Blocked by Browser' : 'Camera Feed Offline / Unreachable'}
+                  </p>
+                  <p className="text-xs text-slate-500 max-w-md mt-1">
+                    {isLocalHttpStream
+                      ? 'Local HTTP camera streams cannot be directly embedded into hosted HTTPS websites without a secure proxy or tunnel.'
+                      : `Unable to establish MJPEG stream with ESP32-CAM at ${streamUrl}. Ensure camera is powered and connected to Wi-Fi.`}
+                  </p>
+                  <div className="flex items-center gap-3 mt-4">
+                    <a
+                      href={streamUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 transition-colors"
+                    >
+                      Open Stream Directly <ExternalLink className="h-3 w-3" />
+                    </a>
+                    <button
+                      onClick={() => {
+                        setStreamError(false);
+                      }}
+                      className="rounded-lg bg-slate-800 px-3.5 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700 transition-colors"
+                    >
+                      Retry Connection
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400 pt-1">
-              <span>Resolution Target: SVGA (800x600) / UXGA (1600x1200)</span>
-              <span className="text-slate-500 font-mono">Continuous Video: NOT ENABLED (Snapshots on demand)</span>
+              <span>Sensor: GC2145 (QQVGA 160x120 software JPEG)</span>
+              <span className="text-slate-500 font-mono">Port: :81/stream (MJPEG)</span>
             </div>
           </div>
 
@@ -114,18 +194,28 @@ export default function CameraPage() {
               className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-emerald-500 active:scale-98 transition-all disabled:opacity-50"
             >
               <RefreshCw className={`h-4 w-4 ${snapshotLoading ? 'animate-spin' : ''}`} />
-              <span>{snapshotLoading ? 'Triggering Capture...' : 'Capture Immediate Snapshot'}</span>
+              <span>{snapshotLoading ? 'Capturing Frame...' : 'Capture Immediate Snapshot'}</span>
             </button>
 
-            {/* Last Captured Image Placeholder */}
+            {/* Latest Captured Image Display */}
             <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
               <span className="text-[11px] font-medium text-slate-400 block mb-2">Latest Saved Snapshot</span>
-              <div className="aspect-4/3 rounded bg-slate-900 border border-slate-800/80 flex flex-col items-center justify-center p-4 text-center">
-                <Camera className="h-8 w-8 text-slate-700 mb-2" />
-                <span className="text-xs text-slate-500">No snapshot captured yet</span>
-              </div>
+              {latestSnapshot ? (
+                <div className="aspect-4/3 rounded bg-black border border-slate-800/80 overflow-hidden flex items-center justify-center">
+                  <img
+                    src={latestSnapshot}
+                    alt="Captured snapshot"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+              ) : (
+                <div className="aspect-4/3 rounded bg-slate-900 border border-slate-800/80 flex flex-col items-center justify-center p-4 text-center">
+                  <Camera className="h-8 w-8 text-slate-700 mb-2" />
+                  <span className="text-xs text-slate-500">No snapshot captured yet</span>
+                </div>
+              )}
               <p className="mt-2 text-[10px] text-slate-500 font-mono text-center">
-                Last capture: None
+                Last capture: {snapshotTimestamp || 'None'}
               </p>
             </div>
 
