@@ -58,11 +58,16 @@ export async function GET() {
       const latencyMs = Date.now() - startTime;
 
       if (error) {
-        // If error indicates table doesn't exist yet (relation "device_state" does not exist)
-        if (error.code === '42P01' || error.message.includes('does not exist')) {
+        // If error indicates table doesn't exist yet (PGRST205 / 42P01 / schema cache error)
+        if (
+          error.code === 'PGRST205' ||
+          error.code === '42P01' ||
+          error.message?.includes('schema cache') ||
+          error.message?.includes('does not exist')
+        ) {
           supabaseHealth = {
             status: 'CONNECTED',
-            message: 'Supabase credentials valid and connected, but database tables are not yet created (Pending SQL schema migration).',
+            message: 'Supabase credentials valid and connected. Database tables are pending SQL migration (public.device_state not found: PGRST205). Run supabase/schema.sql in Supabase SQL Editor.',
             latencyMs,
           };
         } else {
@@ -75,7 +80,7 @@ export async function GET() {
       } else {
         supabaseHealth = {
           status: 'CONNECTED',
-          message: 'Supabase database connection healthy.',
+          message: 'Supabase database connection healthy and schema tables verified.',
           latencyMs,
         };
 
